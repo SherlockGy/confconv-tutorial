@@ -1,0 +1,23 @@
+[package]
+name = "confconv"
+version = "0.1.0"
+edition = "2021"
+description = "配置文件格式转换工具 - 第3章版本"
+
+[dependencies]
+# clap: 命令行参数解析
+clap = { version = "4.5", features = ["derive"] }
+
+# serde: Rust 序列化框架
+# derive feature: 启用 #[derive(Serialize, Deserialize)]
+serde = { version = "1", features = ["derive"] }
+
+# serde_json: JSON 格式支持
+serde_json = "1"
+
+# serde_yml: YAML 格式支持
+# 注意: serde_yaml 已被弃用，这是其维护的 fork
+serde_yml = "0.0.12"
+
+# toml: TOML 格式支持
+toml = "0.8"

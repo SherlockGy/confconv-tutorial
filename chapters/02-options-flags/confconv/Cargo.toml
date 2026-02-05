@@ -1,0 +1,10 @@
+[package]
+name = "confconv"
+version = "0.1.0"
+edition = "2021"
+description = "配置文件格式转换工具 - 第2章版本"
+
+[dependencies]
+# clap: 命令行参数解析
+# derive feature: 启用 #[derive(Parser)] 宏
+clap = { version = "4.5", features = ["derive"] }
