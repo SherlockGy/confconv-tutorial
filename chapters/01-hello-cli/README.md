@@ -160,7 +160,7 @@ struct Cli {
 
 ---
 
-## Clap 新特性
+## 初识 Clap
 
 ### 什么是 Clap？
 
@@ -204,17 +204,52 @@ fn main() {
 
 ### #[command(...)] 属性
 
-`#[command(...)]` 用于设置程序的元数据：
+**这个属性从哪来？**
+
+`#[command(...)]` 不是 Rust 标准库的东西，而是 clap 的 derive 宏定义的**辅助属性**：
+
+```rust
+#[derive(Parser)]  // ← 这是 clap 提供的过程宏
+//       ↑
+//  clap 在处理这个 derive 时，会同时识别：
+//  - #[command(...)] 用于配置整个命令
+//  - #[arg(...)]     用于配置单个参数
+```
+
+`name`、`version`、`about` 等都是 clap 规定的参数名，不是 Rust 语法。
+
+**Java 对比**：
+```java
+// Java: @Command 注解来自 picocli 库
+@Command(name = "confconv", version = "0.1.0")
+class Cli { }
+```
+
+本质上都是"库定义的元数据标注"，只是语法不同。
+
+**常用参数**：
 
 ```rust
 #[derive(Parser)]
-#[command(name = "confconv")]           // 程序名
+#[command(name = "confconv")]           // 程序名称（用于 --version 输出）
+#[command(bin_name = "confconv")]       // 二进制名称（用于 Usage 行）
 #[command(version = "0.1.0")]           // 版本号
 #[command(about = "配置文件格式转换")]    // 简短描述
 struct Cli {
     // ...
 }
 ```
+
+| 参数 | 作用 | 显示位置 |
+|------|------|----------|
+| `name` | 程序的"官方名称" | `--version` 输出 |
+| `bin_name` | 可执行文件名 | `Usage: xxx` 行 |
+| `version` | 版本号 | `--version` 输出 |
+| `about` | 简短描述 | `--help` 第一行 |
+
+> **注意**：
+> - 如果不设置 `bin_name`，Usage 行会显示实际的可执行文件名（如 `confconv.exe`），而不是 `name` 的值
+> - 如果不设置 `version`，程序不会有 `--version` 选项，此时 `name` 基本无处显示——它主要是为 `--version` 服务的
 
 运行 `--help` 时，这些信息会自动显示。
 
@@ -244,16 +279,69 @@ cargo new confconv
 cd confconv
 ```
 
-### 添加依赖
+### 理解 Cargo.toml
+
+`Cargo.toml` 是 Rust 项目的配置文件，类似于 Java 的 `pom.xml` 或 `build.gradle`。
 
 编辑 `Cargo.toml`：
 
 ```toml
 [package]
-name = "confconv"
-version = "0.1.0"
-edition = "2021"
+name = "confconv"                       # 包名，也是默认的二进制名称
+version = "0.1.0"                       # 语义化版本号
+edition = "2021"                        # Rust edition（推荐 2021）
+description = "配置文件格式转换工具"      # 包描述（发布到 crates.io 时显示）
+readme = "README.md"                    # 说明文档路径
+license = "MIT"                         # 开源许可证
+keywords = ["config", "converter", "json", "yaml", "toml"]  # 搜索关键词（最多5个）
+categories = ["command-line-utilities"] # 分类（见 crates.io/category_slugs）
 
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+
+# 发布构建优化（可选）
+[profile.release]
+strip = true    # 移除调试符号，减小二进制体积
+lto = true      # 链接时优化，提升性能但编译变慢
+```
+
+#### 字段说明
+
+| 字段 | 必需 | 说明 |
+|------|------|------|
+| `name` | 是 | 包名，也是默认的二进制文件名 |
+| `version` | 是 | 语义化版本号 (major.minor.patch) |
+| `edition` | 是 | Rust 语言版本（2021 或 2024） |
+| `description` | 否 | 简短描述，发布时显示 |
+| `readme` | 否 | README 文件路径 |
+| `license` | 否 | 许可证标识符（MIT / Apache-2.0 等） |
+| `keywords` | 否 | 搜索关键词，最多 5 个 |
+| `categories` | 否 | crates.io 分类 |
+
+#### [[bin]] 配置（可选）
+
+通常**不需要**手动配置 `[[bin]]`，因为 `[package].name` 就是二进制名称。
+
+只有当你想要**不同于包名的二进制名称**时才需要：
+
+```toml
+[[bin]]
+name = "my-cli"        # 二进制名称（覆盖 package.name）
+path = "src/main.rs"   # 入口文件路径
+```
+
+#### 与 clap bin_name 的关系
+
+| 配置位置 | 作用 |
+|----------|------|
+| `Cargo.toml` 的 `[package].name` | 实际编译出的二进制文件名 |
+| clap 的 `#[command(bin_name = "...")]` | `--help` 中 Usage 行显示的名称 |
+
+通常两者保持一致即可。如果不设置 clap 的 `bin_name`，它会自动使用实际运行时的二进制名。
+
+#### 依赖声明
+
+```toml
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
 ```
@@ -299,14 +387,59 @@ fn main() {
 
 ---
 
-## 运行效果
+## 开发与运行
+
+### cargo run 与 `--` 分隔符
+
+开发时我们用 `cargo run` 来编译并运行程序。但这里有个重要的细节：
 
 ```bash
-# 编译
-cargo build
+# ❌ 错误：cargo 会把 --help 当成自己的参数
+cargo run --help         # 显示的是 cargo run 的帮助，不是你程序的帮助！
 
-# 查看帮助
+# ✅ 正确：用 -- 分隔 cargo 参数和程序参数
+cargo run -- --help      # -- 之后的参数传给你的程序
+cargo run -- config.json # 传递 config.json 给程序
+```
+
+**`--` 的作用**：告诉 cargo "后面的参数不是给你的，请原样传给程序"。
+
+这是 Unix 命令行的通用约定，不仅限于 cargo。
+
+### 开发阶段 vs 发布阶段
+
+| 阶段 | 命令 | 说明 |
+|------|------|------|
+| 开发 | `cargo run -- <args>` | 自动编译 + 运行，方便快速测试 |
+| 发布 | `confconv <args>` | 使用编译好的二进制文件 |
+
+```bash
+# 开发时快速测试
 cargo run -- --help
+
+# 编译发布版本
+cargo build --release
+
+# 二进制文件位置：target/release/confconv（或 .exe）
+# 可以复制到 PATH 目录，然后直接使用：
+confconv --help
+```
+
+---
+
+## 运行效果
+
+先编译项目：
+
+```bash
+cargo build
+```
+
+然后运行（以下示例假设 `confconv` 已在 PATH 中，或在 `target/debug/` 目录下运行）：
+
+```bash
+# 查看帮助
+confconv --help
 ```
 
 输出：
@@ -325,7 +458,7 @@ Options:
 
 ```bash
 # 查看版本
-cargo run -- --version
+confconv --version
 ```
 
 输出：
@@ -335,7 +468,7 @@ confconv 0.1.0
 
 ```bash
 # 正常使用
-cargo run -- config.json
+confconv config.json
 ```
 
 输出：
@@ -347,7 +480,7 @@ cargo run -- config.json
 
 ```bash
 # 不提供参数（会报错）
-cargo run
+confconv
 ```
 
 输出：
@@ -418,7 +551,7 @@ fn main() {
 | 陷阱 | 解决方案 |
 |------|---------|
 | 忘记添加 `derive` feature | 确保 `features = ["derive"]` |
-| 使用 `cargo run config.json` | 应该是 `cargo run -- config.json`，`--` 分隔 cargo 和程序参数 |
+| `cargo run config.json` 不工作 | 需要 `cargo run -- config.json`（见上方"开发与运行"） |
 | 文档注释用 `//` | 应该用 `///`，单行注释不会成为帮助文本 |
 
 ---
